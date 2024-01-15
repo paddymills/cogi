@@ -5,9 +5,6 @@ SRC_DIR := src
 %: $(SRC_DIR)/%.py
 	python $^
 
-rollup:
-	python src/rollup.py -c
-
 # move .ready files
 mv: $(SRC_DIR)/*.ready
 	python src/utils.py --move $^
