@@ -1,0 +1,25 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+
+# open xl
+~$*
+
+# temp text files
+*.txt
+*.ready
+*.csv
+*.out
+tmp/
+temp/
+inbox/
+
+# windows links
+*.lnk
