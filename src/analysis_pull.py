@@ -33,9 +33,10 @@ def get_mb51_query_data(wb):
     mm = []
     mm.extend(sheet.range("C2").expand('down').value)
     mm.extend(sheet.range("H2").expand('down').value)
+    earliest_data = min(sheet.range("B2").expand('down').value)
 
     pyperclip.copy('\r\n'.join(sorted(set(mm))))
-    print("Parts and Materials copied to clipboard")
+    print("Parts and Materials copied to clipboard. Earliest date is {}".format(earliest_data.strftime("%m-%d-%Y")))
 
 def monday():
     today = dt.date.today()
