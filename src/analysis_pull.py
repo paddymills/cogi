@@ -11,7 +11,6 @@ def main():
     wb = xl.Book(r"C:\Users\PMiller1\OneDrive - high.net\inventory\InventoryAnalysis\2023_WeeklyAnalysis.xlsx")
 
     fill_sheet(wb)
-    get_mb51_query_data(wb)
 
 
 def fill_sheet(wb):
@@ -24,8 +23,11 @@ def fill_sheet(wb):
     if wb.sheets[sheet_name].range("A2").value is None:
         data = SndbConnection().query_from_sql_file(sqlfile)
         wb.sheets[sheet_name].range("A2").value = [list(row) for row in data]
+
+        get_mb51_query_data(wb)
     else:
         print("\033[91m Sheet {} already exists and has data\033[00m".format(sheet_name))
+        get_not_filled(wb)
 
 
 def get_mb51_query_data(wb):
@@ -37,6 +39,21 @@ def get_mb51_query_data(wb):
 
     pyperclip.copy('\r\n'.join(sorted(set(mm))))
     print("Parts and Materials copied to clipboard. Earliest date is {}".format(earliest_data.strftime("%m-%d-%Y")))
+
+
+def get_not_filled(wb):
+    sheet = wb.sheets[monday()]
+    mm = list()
+    for r in sheet.range("A2:L2").expand('down').value:
+        if r[-1] in (None, ''):
+            mm.append(r[2])
+            mm.append(r[7])
+
+    earliest_data = min(sheet.range("B2").expand('down').value)
+
+    pyperclip.copy('\r\n'.join(sorted(set(mm))))
+    print("Not matched Parts and Materials copied to clipboard. Earliest date is {}".format(earliest_data.strftime("%m-%d-%Y")))
+
 
 def monday():
     today = dt.date.today()
