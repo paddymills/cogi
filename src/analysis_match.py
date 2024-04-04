@@ -99,16 +99,22 @@ def main():
     cnf, issue = parse_mb51()
 
     strategies = range(0, 4)
+    two_hours = 60*60*2 # two hours in seconds, because a timedelta will normalize and lose the hours component: https://docs.python.org/3/library/datetime.html#datetime.timedelta
     def get_consumption(analysisRow, strategy=0):
         order_or_doc = None
         area = None
+
+        part_match = lambda item, analysis: item.order.part == analysis.part and item.matl == analysis.matl and item.order.qty == analysis.qty
+        issue_match = lambda item, analysis: item.matl == analysis.matl and (item.prog == analysis.prog or item.prog == analysis.id)
+        area_match = lambda delta, a, b: abs(a.area - b.area) < delta
 
         match strategy:
             case 0:
                 # direct matches
                 for i, item in enumerate(cnf):
-                    area_match = abs(item.area - analysisRow.area) < .001
-                    if item.order.part == analysisRow.part and item.matl == analysisRow.matl and area_match and item.order.qty == analysisRow.qty and item.timestamp > analysisRow.timestamp:
+                    # area_match = abs(item.area - analysisRow.area) < .001
+                    # if item.order.part == analysisRow.part and item.matl == analysisRow.matl and area_match and item.order.qty == analysisRow.qty and (analysisRow.timestamp - item.timestamp).seconds < two_hours:
+                    if part_match(item, analysisRow) and area_match(0.001, item, analysisRow) and (analysisRow.timestamp - item.timestamp).seconds < two_hours:
                         order_or_doc = item.order.order
                         area = item.area
                         cnf.pop(i)
@@ -118,8 +124,9 @@ def main():
             case 1:
                 # match with a wider range for area
                 for i, item in enumerate(cnf):
-                    area_match = abs(item.area - analysisRow.area) < 100
-                    if item.order.part == analysisRow.part and item.matl == analysisRow.matl and area_match and item.order.qty == analysisRow.qty and item.timestamp > analysisRow.timestamp:
+                    # area_match = abs(item.area - analysisRow.area) < 100
+                    # if item.order.part == analysisRow.part and item.matl == analysisRow.matl and area_match and item.order.qty == analysisRow.qty and (analysisRow.timestamp - item.timestamp).seconds < two_hours:
+                    if part_match(item, analysisRow) and area_match(100, item, analysisRow) and (analysisRow.timestamp - item.timestamp).seconds < two_hours:
                         order_or_doc = item.order.order
                         area = item.area
                         cnf.pop(i)
@@ -129,8 +136,9 @@ def main():
             case 2:
                 # match for issue items
                 for i, item in enumerate(issue):
-                    area_match = abs(item.area - analysisRow.area) < .001
-                    if item.matl == analysisRow.matl and (item.prog == analysisRow.prog or item.prog == analysisRow.id) and area_match and item.timestamp > analysisRow.timestamp:
+                    # area_match = abs(item.area - analysisRow.area) < .001
+                    # if item.matl == analysisRow.matl and (item.prog == analysisRow.prog or item.prog == analysisRow.id) and area_match and item.timestamp > analysisRow.timestamp:
+                    if issue_match(item, analysisRow) and area_match(0.001, item, analysisRow) and item.timestamp > analysisRow.timestamp:
                         order_or_doc = item.doc
                         area = item.area
                         issue.pop(i)
@@ -141,8 +149,9 @@ def main():
             case 3:
                 # direct matches, dates not right (can happen with COGI clearing)
                 for i, item in enumerate(cnf):
-                    area_match = abs(item.area - analysisRow.area) < .001
-                    if item.order.part == analysisRow.part and item.matl == analysisRow.matl and area_match and item.order.qty == analysisRow.qty and (analysisRow.timestamp - item.timestamp).days == 0:
+                    # area_match = abs(item.area - analysisRow.area) < .001
+                    # if item.order.part == analysisRow.part and item.matl == analysisRow.matl and area_match and item.order.qty == analysisRow.qty and item.timestamp > analysisRow.timestamp:
+                    if part_match(item, analysisRow) and area_match(0.001, item, analysisRow) and item.timestamp > analysisRow.timestamp:
                         order_or_doc = item.order.order
                         area = item.area
                         cnf.pop(i)
@@ -173,17 +182,25 @@ def main():
     vals = sheet.range("A2:J2").expand('down').value
     print("filling sheet", sheet.name)
     for r, row in tqdm(enumerate(vals, start=2), desc="Parsing Analysis", total=len(vals)):
-        if sheet.range((r, Header.order+1)).value or sheet.range((r, Header.sapval+1)).value:
+        if sheet.range((r, Header.order+1)).value and not sheet.range((r, Header.sapval+1)).value:
+            data.append( str(int(sheet.range((r, Header.order+1)).value)) )
+
+        elif sheet.range((r, Header.order+1)).value or sheet.range((r, Header.sapval+1)).value:
             data.append(None)
-            continue
 
-        data.append( AnalysisRow.parse(row) )
+        else:
+            data.append( AnalysisRow.parse(row) )
 
+
+    with open('temp/parsed.txt', 'w') as f:
+        f.write('\n'.join([str(r) for r in data if r]))
+    with open('temp/sap.txt', 'w') as f:
+        f.write('\n'.join([str(r) for r in cnf]))
 
     updates_made = 0
     for strategy in strategies:
         for r, row in tqdm(enumerate(data, start=2), desc=f"Setting Data<strategy:{strategy}>", total=len(data)):
-            if row is None:
+            if row is None or type(row) is not AnalysisRow:
                 continue
 
             match = get_consumption(row, strategy)
@@ -197,6 +214,14 @@ def main():
         if row is None:
             continue
 
+        if type(row) is not AnalysisRow:
+            for i, item in enumerate(cnf):
+                if item.order.order == row:
+                    sheet.range((r, Header.sapval+1)).value = item.area
+                    updates_made += 1
+                    cnf.pop(i)
+            continue
+
         is_in_inbox = get_consumption(row, 'inbox')
         if is_in_inbox:
             sheet.range((r, Header.sapval+2)).value = 'Inbox error'
@@ -204,6 +229,7 @@ def main():
             updates_made += 1
 
     print(f"{updates_made} rows were updated")
+    wb.save()
     wb.close()
         
 
@@ -244,7 +270,7 @@ def parse_mb51() -> dict[str, Mb51Item]:
                 if type(row.program) in (int, float):
                     row.program = str(int(row.program))
                 issue.append( IssueItem(row.matl, row.document, timestamp, row.program, area) )
-            case '261':
+            case '261' if row.uom != 'EA':
                 # issue to order
                 try:
                     cnf.append( Mb51Item(row.matl, orders[row.order], timestamp, area) )
