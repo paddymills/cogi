@@ -276,7 +276,8 @@ def parse_mb51() -> dict[str, Mb51Item]:
                     cnf.append( Mb51Item(row.matl, orders[row.order], timestamp, area) )
                 except KeyError:
                     if 'BATCH' in row.user:
-                        tqdm.write(f"part not found for order: {row.order}")
+                        pass
+                        # tqdm.write(f"part not found for order: {row.order}")
             case _:
                 continue
 
