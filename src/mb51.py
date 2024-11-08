@@ -203,7 +203,10 @@ class Mb51:
                     pass
 
     def remove(self, order_or_doc):
-        del self.rows[order_or_doc]
+        try:
+            del self.rows[order_or_doc]
+        except KeyError:
+            pass
 
     def get_area(self, order_or_doc) -> float | None:
         match self.rows[order_or_doc]:

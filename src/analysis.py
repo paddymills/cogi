@@ -277,20 +277,20 @@ class WeeklyAnalysis:
             self.parse_sheet()
 
         not_matched = list()
-        earliest_date = datetime.max
+        dates = []
         for row in self.rows.values():
             match row:
                 case ParsedAnalysisRow() if row.sapval is None:
                     not_matched += [row.part, row.matl]
-                    earliest_date = min(earliest_date, row.timestamp)
+                    dates.append(row.timestamp)
                 case NotMatchedAnalysisRow():
                     not_matched += [row.part, row.matl]
-                    earliest_date = min(earliest_date, row.timestamp)
+                    dates.append(row.timestamp)
 
         # load not-matched into clipboard
         if not_matched:
             ls = sorted(set(not_matched))
-            logging.info(
+            logging.debug(
                 "Parts and Materials not matched:\n{}\n~~~~~~~~~~~~~~~~~~".format(
                     "\n".join(ls)
                 )
@@ -298,8 +298,8 @@ class WeeklyAnalysis:
 
             pyperclip.copy("\r\n".join(ls))
             print(
-                "Parts and Materials copied to clipboard. Earliest date is {}".format(
-                    earliest_date.strftime("%m-%d-%Y")
+                "Parts and Materials copied to clipboard. Date range is is {} to {}".format(
+                    min(dates).strftime("%m-%d-%Y"), max(dates).strftime("%m-%d-%Y")
                 )
             )
 
@@ -379,19 +379,13 @@ class WeeklyAnalysis:
                 # no order/doc -> needs matched
                 case (None, None):
                     # try to match by ID, in case it's an issued item
-                    by_id = self.mb51.get_by_id(int(row[header.id]))
+                    by_id = self.mb51.get_by_id(row.id)
                     if by_id:
                         self.update(i, by_id.doc, by_id.area)
 
                     # set to be matched using nearest neighbor
                     else:
-                        self.rows[i] = NotMatchedAnalysisRow(
-                            part=row[header.part],
-                            matl=row[header.matl],
-                            timestamp=row[header.timestamp],
-                            qty=int(row[header.qty]),
-                            area=row[header.area],
-                        )
+                        self.rows[k] = row.to_not_matched()
 
                 # order/doc was manually tagged
                 case (sapref, None):
@@ -405,6 +399,19 @@ class WeeklyAnalysis:
                 case (sapref, _):
                     self.rows[k] = CompleteAnalysisRow(sapref)
                     self.mb51.remove(sapref)
+
+        log.debug("MB51 listing")
+        log.debug("==============")
+        for v in self.mb51.rows.values():
+            log.debug(v)
+        log.debug("==============")
+        log.debug("Not-Matched listing")
+        log.debug("==============")
+        for v in self.rows.values():
+            match v:
+                case NotMatchedAnalysisRow(part, matl, timestamp, qty, area):
+                    log.debug(v)
+        log.debug("==============")
 
         # analyze
         key = lambda r: (r.part, r.qty, r.matl)
@@ -448,15 +455,12 @@ class WeeklyAnalysis:
                         )
                     )
 
-                self.rows[id] = AnalysisRowUpdate(order.order, order.area)
-                self.mb51.remove(order.order)
+                self.update(id, order.order, order.area)
 
     def write_updates(self):
         # calculate updates
         start = 0
         updates = dict()
-        not_matched = list()
-        earliest_date = datetime.max
         for k, item in self.rows.items():
             match item:
                 case AnalysisRowUpdate(sapref, area):
@@ -466,18 +470,11 @@ class WeeklyAnalysis:
 
                     updates[start].append([sapref, area])
 
-                case ParsedAnalysisRow(part, matl, timestamp, qty, area):
-                    # reset updates start counter
-                    start = 0
-
-                    not_matched += [part, matl]
-                    earliest_date = min(earliest_date, timestamp)
-
         # write updates
         update_count = 0
-        for start, updates in updates.items():
-            self.sheet.range((start, self.header.sapref + 1)).value = updates
-            update_count += len(updates)
+        for start, rows in updates.items():
+            self.sheet.range((start, self.header.sapref + 1)).value = rows
+            update_count += len(rows)
 
         log.info("%d Rows updated", update_count)
         self.workbook.save()
@@ -524,10 +521,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.silence:
-        verbose = -1
-    else:
-        verbose = args.verbose - args.quiet
-    match verbose:
+        args.verbose = 0
+
+    args.verbose -= args.quiet
+    match args.verbose:
         case i if i < 1:
             log.setLevel(logging.CRITICAL)
         case 1:
