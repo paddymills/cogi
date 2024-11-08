@@ -1,4 +1,3 @@
-
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Iterator, Dict, List
@@ -7,187 +6,217 @@ from types import SimpleNamespace
 
 import xlwings
 
-from analysis_match import AnalysisRowUpdate
 
+@dataclass
+class ConsumptionItem:
+    matl: str
+    timestamp: datetime
+    area: float
 
-def numstr(val) -> str:
-    if type(val) in (int, float):
-        return str(int(val))
-    return val
 
 @dataclass
 class IssueItem:
+    id: int
     matl: str
-    doc: str
-    timestamp: datetime
-    ref: str
-    area: float
-
-    def to_update(self) -> AnalysisRowUpdate:
-        return AnalysisRowUpdate(sapref=self.doc, consumption=self.area)
-
-@dataclass
-class CnfItem:
-    matl: str
+    doc: int
     timestamp: datetime
     area: float
+
 
 @dataclass
 class ProductionOrder:
     part: str
     order: int
     qty: int
-    material: CnfItem | None
+    consumption: ConsumptionItem | None
 
-    def to_update(self) -> AnalysisRowUpdate:
-        assert self.material is None
+    def to_match(self):
+        assert (
+            self.consumption is not None
+        ), "Cannot coerce a non-consumption to AnalysisMatch"
 
-        return AnalysisRowUpdate(sapref=self.order, consumption=self.material.area)
+        return AnalysisMatch(
+            order=self.order,
+            timestamp=self.consumption.timestamp,
+            area=self.consumption.area,
+        )
 
-Mb51Item = CnfItem | IssueItem
+
+@dataclass
+class AnalysisMatch:
+    order: int
+    timestamp: datetime
+    area: float
+
 
 @dataclass
 class Mb51ParsedRow:
-    doc: int;
-    mvmt: str;
-    matl: str;
-    qty: float;
-    order: str;
-    timestamp: datetime;
-    ref: str;
+    doc: int
+    mvmt: str
+    matl: str
+    qty: float
+    order: str | None
+    timestamp: datetime
+    ref: int | None
 
-    def to_order(self, cnf=None) -> ProductionOrder:
-        return ProductionOrder(
-            part=self.matl, order=self.order, qty=self.qty, material=cnf
+    def __init__(self, doc, mvmt, matl, qty, order, timestamp, ref):
+        self.doc = int(doc)
+        self.mvmt = mvmt
+        self.matl = matl
+        self.qty = qty
+        self.timestamp = timestamp
+
+        if order:
+            self.order = int(order)
+
+        if ref:
+            self.ref = int(ref)
+
+    def to_consumption(self) -> ConsumptionItem:
+        return ConsumptionItem(
+            matl=self.matl,
+            timestamp=self.timestamp,
+            area=self.qty * -1,
         )
 
     def to_issued(self) -> IssueItem:
         return IssueItem(
+            id=self.ref,
             matl=self.matl,
             doc=self.doc,
             timestamp=self.timestamp,
-            ref=self.ref,
-            # row.qty is negative for a consumption
-            area=-1*self.qty
+            area=self.qty * -1,
         )
-    
-    def to_cnf(self) -> CnfItem:
-        return CnfItem(
-            matl=self.matl,
-            timestamp=self.timestamp,
-            # row.qty is negative for a consumption
-            area=-1*self.qty
+
+    def to_order(self) -> ProductionOrder:
+        assert self.order is not None, "Cannot coerce a non-order to ProductionOrder"
+
+        return ProductionOrder(
+            part=self.matl,
+            order=self.order,
+            qty=int(self.qty),
+            consumption=None,
         )
+
 
 class Mb51:
-    issued: Dict[str, IssueItem]
-    cnf: Dict[str, ProductionOrder]
+    rows: Dict[int, ProductionOrder | IssueItem]
 
     def __init__(self) -> None:
-        self.issued = dict()
-        self.cnf = dict()
+        self.rows = dict()
 
         self.parse_sheet()
 
-    def print(self) -> None:
-        print("Issued:")
-        for x in self.issued.values():
-            print('\t', x)
+    def __del__(self):
+        self.wb.close()
 
-        print("Cnf:")
-        for x in self.cnf.values():
-            print('\t', x)
+    @property
+    def workbook(self):
+        return xlwings.Book(r"C:\Users\PMiller1\Documents\SAP\SAP GUI\mb51.xlsx")
 
-    def commit_order(self, order: str) -> AnalysisRowUpdate:
-        ref = numstr(ref)
+    @property
+    def sheet(self):
+        return self.workbook.sheets[self.monday.strftime("%Y-%m-%d")]
 
-        result = self.cnf[order].to_update()
-        del self.cnf[order]
-
-        return result
-
-    def commit_issued(self, ref: str | int | float) -> AnalysisRowUpdate:
-        ref = numstr(ref)
-
-        result = self.issued[ref].to_update()
-        del self.issued[ref]
-
-        return result
-
-    def get_orders_by_part(self, part: str) -> Iterator[ProductionOrder]:
-        for v in self.cnf.values():
-            if v.material == part:
-                yield v
-
-    def get_issued_by_mm(self, mm: str) -> Iterator[ProductionOrder]:
-        for v in self.issued.values():
-            if v.matl == mm:
-                yield v
-
-    def parse_sheet(self) -> Iterator[Mb51ParsedRow]:
-        if len(xlwings.apps) == 0:
-            app = xlwings.App()
-            wb = app.books.open(r"C:\Users\PMiller1\Documents\SAP\SAP GUI\mb51.xlsx")
-            app.books['Book1'].close()
-        else:
-            wb = xlwings.books['mb51.xlsx']
-        sheet = wb.sheets.active
-
+    def parse_sheet(self):
         aliases = dict(
-            matl = "Material",
-            uom = "Unit of Entry",
-            qty = "Qty in unit of entry",
-            type = "Movement type",
-            loc = "Storage Location",
-            plant = "Plant",
-            order = "Order",
-            date = "Posting Date",
-            time = "Time of Entry",
-            id = "Reference",
-            document = "Material Document",
-            user = "User Name",
+            matl="Material",
+            uom="Unit of Entry",
+            qty="Qty in unit of entry",
+            type="Movement type",
+            loc="Storage Location",
+            plant="Plant",
+            order="Order",
+            date="Posting Date",
+            time="Time of Entry",
+            id="Reference",
+            document="Material Document",
+            user="User Name",
         )
 
         header = SimpleNamespace()
-        row = sheet.range("A1").expand('right').value
+        row = self.sheet.range("A1").expand("right").value
         for k, v in aliases.items():
             setattr(header, k, row.index(v))
 
-        rng = sheet.range((2, 1), (2, len(row) + 1)).expand('down').options(ndim=2).value
-        rng = tqdm(rng, desc='Parsing sheet {}'.format(sheet), total=len(rng))
+        rng = (
+            self.sheet.range((2, 1), (2, len(row) + 1))
+            .expand("down")
+            .options(ndim=2)
+            .value
+        )
+        rng = tqdm(rng, desc="Parsing sheet {}".format(sheet), total=len(rng))
 
-        cnf: Dict[str, CnfItem] = dict()
-        orders: List[Mb51ParsedRow] = list()
+        parse = lambda row: Mb51ParsedRow(
+            doc=row[header.document],
+            mvmt=row[header.type],
+            matl=row[header.matl],
+            qty=row[header.qty],
+            order=row[header.order],
+            timestamp=row[header.date] + timedelta(days=row[header.time]),
+            ref=row[header.id],
+        )
+
+        consumption: Dict[int, ConsumptionItem] = dict()
         for row in rng:
-            parsed = Mb51ParsedRow(
-                doc=row[header.document],
-                mvmt=row[header.type],
-                matl=row[header.matl],
-                qty=row[header.qty],
-                order=row[header.order],
-                timestamp=row[header.date] + timedelta(days=row[header.time]),
-                ref=row[header.id],
-            )
-
             # TODO: change parser so that we don't use last qty column.
             #   This will remove the need to convert from FT2,
             #   which introduces a mismatch due to conversion
             if row[header.uom] == "FT2":
-                parsed.qty *= 144
-                
-            match parsed.mvmt:
-                case '101' if row[header.loc] == 'PROD':
-                    orders.append(parsed)
-                case '201' | '221' if parsed.ref is not None:
+                row[header.qty] *= 144
+
+            match row[header.type]:
+                case "101" if row[header.loc] == "PROD" and row[
+                    header.order
+                ] is not None:
+                    parsed = parse(row)
+                    self.rows[parsed.order] = parsed.to_order()
+                case "201" | "221" if row[header.id] is not None:
                     # issue to cost center or job
-                    self.issued[parsed.ref] = parsed.to_issued()
-                case '261' if row[header.uom] != 'EA':
+                    parsed = parse(row)
+                    self.rows[parsed.doc] = parsed.to_issued()
+                case "261" if row[header.uom] != "EA":
                     # issue to order
-                    cnf[parsed.order] = parsed.to_cnf()
+                    parsed = parse(row)
+                    consumption[parsed.order] = parsed.to_consumption()
                 case _:
                     continue
 
-        # wb.close()
+        wb.close()
 
-        for parsed in orders:
-            self.cnf[parsed.order] = parsed.to_order(cnf.get(parsed.order, None))
+        for parsed in self.rows.values():
+            match parsed:
+                case ProductionOrder() if parsed.order in consumption:
+                    parsed.consumption = consumption[parsed.order]
+                    del consumption[parsed.order]
+                case _:
+                    pass
+
+    def remove(self, order_or_doc):
+        del self.rows[order_or_doc]
+
+    def get_area(self, order_or_doc) -> float | None:
+        match self.rows[order_or_doc]:
+            case ProductionOrder(_, _, _, consumption):
+                return consumption.area
+            case IssueItem(_, _, _, _, area):
+                return area
+            case _:
+                return None
+
+    def get_by_id(self, id: int) -> IssueItem | None:
+        for row in self.rows.values():
+            if isinstance(row, IssueItem) and row.id == id:
+                return row
+
+        return None
+
+    def print(self):
+        for k, v in self.rows.items():
+            print(k, "->", v)
+
+    def get_neighborhood(self, part: str, qty: int, matl: str) -> List[AnalysisMatch]:
+        for row in self.rows.values():
+            match row:
+                case ProductionOrder() if row.part == part and row.qty == qty and row.consumption and row.consumption.matl == matl:
+                    yield row.to_match()
