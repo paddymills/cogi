@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Iterator, Dict, List
+from typing import Dict, Iterator
 from tqdm import tqdm
 from types import SimpleNamespace
 
@@ -101,22 +101,34 @@ class Mb51ParsedRow:
 
 class Mb51:
     rows: Dict[int, ProductionOrder | IssueItem]
+    _wb: xlwings.Book
+    _sheet: xlwings.Sheet
 
     def __init__(self) -> None:
         self.rows = dict()
+        self._wb = None
+        self._sheet = None
 
         self.parse_sheet()
 
     def __del__(self):
-        self.wb.close()
+        self.workbook.close()
 
     @property
     def workbook(self):
-        return xlwings.Book(r"C:\Users\PMiller1\Documents\SAP\SAP GUI\mb51.xlsx")
+        if not self._wb:
+            self._wb = xlwings.Book(
+                r"C:\Users\PMiller1\Documents\SAP\SAP GUI\mb51.xlsx"
+            )
+
+        return self._wb
 
     @property
     def sheet(self):
-        return self.workbook.sheets[self.monday.strftime("%Y-%m-%d")]
+        if not self._sheet:
+            self._sheet = self.workbook.sheets[0]
+
+        return self._sheet
 
     def parse_sheet(self):
         aliases = dict(
@@ -145,7 +157,7 @@ class Mb51:
             .options(ndim=2)
             .value
         )
-        rng = tqdm(rng, desc="Parsing sheet {}".format(sheet), total=len(rng))
+        rng = tqdm(rng, desc="Parsing sheet {}".format(self.sheet), total=len(rng))
 
         parse = lambda row: Mb51ParsedRow(
             doc=row[header.document],
@@ -182,8 +194,6 @@ class Mb51:
                 case _:
                     continue
 
-        wb.close()
-
         for parsed in self.rows.values():
             match parsed:
                 case ProductionOrder() if parsed.order in consumption:
@@ -215,8 +225,12 @@ class Mb51:
         for k, v in self.rows.items():
             print(k, "->", v)
 
-    def get_neighborhood(self, part: str, qty: int, matl: str) -> List[AnalysisMatch]:
+    def get_neighborhood(
+        self, part: str, qty: int, matl: str
+    ) -> Iterator[AnalysisMatch]:
         for row in self.rows.values():
             match row:
-                case ProductionOrder() if row.part == part and row.qty == qty and row.consumption and row.consumption.matl == matl:
+                case (
+                    ProductionOrder()
+                ) if row.part == part and row.qty == qty and row.consumption and row.consumption.matl == matl:
                     yield row.to_match()

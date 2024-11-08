@@ -5,7 +5,8 @@ from itertools import groupby
 import logging
 import os
 import re
-from typing import Iterator, List, Dict
+from typing import Tuple, List, Dict
+import pyperclip
 from tqdm import tqdm
 from types import SimpleNamespace
 import xlwings
@@ -88,12 +89,37 @@ class CompleteAnalysisRow:
 
 
 @dataclass
-class ParsedAnalysisRow:
+class NotMatchedAnalysisRow:
+    """
+    Row that is not yet matched
+    """
+
     part: str
     matl: str
     timestamp: datetime
     qty: int
     area: float
+
+
+@dataclass
+class ParsedAnalysisRow:
+    id: int
+    part: str
+    matl: str
+    timestamp: datetime
+    qty: int
+    area: float
+    sapref: int | None
+    sapval: float | None
+
+    def to_not_matched(self) -> NotMatchedAnalysisRow:
+        return NotMatchedAnalysisRow(
+            part=self.part,
+            matl=self.matl,
+            timestamp=self.timestamp,
+            qty=self.qty,
+            area=self.area,
+        )
 
 
 @dataclass
@@ -144,7 +170,7 @@ class Neighborhood:
                 )
             )
 
-    def get_min(self) -> (int, AnalysisMatch):
+    def get_min(self) -> Tuple[int, AnalysisMatch]:
         # get minimum distance in matrix
         min_key = None
         min_dist = None
@@ -181,18 +207,25 @@ class Neighborhood:
 class WeeklyAnalysis:
     rows: Dict[int, ParsedAnalysisRow | AnalysisRowUpdate]
     mb51: Mb51
+    _wb: xlwings.Book
+    _sheet: xlwings.Sheet
+    _monday: date
+    _header: SimpleNamespace
 
     def __init__(self, monday=None):
         self.rows = dict()
         self._monday = monday
+        self._header = None
+        self._wb = None
+        self._sheet = None
 
-        self.mb51 = Mb51()
+        self.mb51 = None
 
     def __del__(self):
-        self.wb.close()
+        self.workbook.close()
 
     @property
-    def monday():
+    def monday(self):
         if not self._monday:
             today = date.today()
             self._monday = today.replace(day=today.day - today.weekday())
@@ -201,13 +234,19 @@ class WeeklyAnalysis:
 
     @property
     def workbook(self):
-        return xlwings.Book(
-            r"C:\Users\PMiller1\OneDrive - high.net\inventory\InventoryAnalysis\2023_WeeklyAnalysis.xlsx"
-        )
+        if not self._wb:
+            self._wb = xlwings.Book(
+                r"C:\Users\PMiller1\OneDrive - high.net\inventory\InventoryAnalysis\2023_WeeklyAnalysis.xlsx"
+            )
+
+        return self._wb
 
     @property
     def sheet(self):
-        return self.workbook.sheets[self.monday.strftime("%Y-%m-%d")]
+        if not self._sheet:
+            self._sheet = self.workbook.sheets[self.monday.strftime("%Y-%m-%d")]
+
+        return self._sheet
 
     def pull(self):
         sqlfile = os.path.join(
@@ -215,6 +254,7 @@ class WeeklyAnalysis:
         )
 
         # create sheet if it does not exist
+        wb = self.workbook
         if self.monday() not in wb.sheet_names:
             wb.sheets["template"].copy(before=wb.sheets["Issues"], name=self.monday())
 
@@ -225,7 +265,7 @@ class WeeklyAnalysis:
         else:
             print(
                 "\033[91m Sheet {} already exists and has data\033[00m".format(
-                    sheet_name
+                    self.monday
                 )
             )
 
@@ -238,15 +278,25 @@ class WeeklyAnalysis:
 
         not_matched = list()
         earliest_date = datetime.max
-        for item in self.rows.values():
-            match item:
-                case ParsedAnalysisRow(part, matl, timestamp, qty, area):
-                    not_matched += [part, matl]
-                    earliest_date = min(earliest_date, timestamp)
+        for row in self.rows.values():
+            match row:
+                case ParsedAnalysisRow() if row.sapval is None:
+                    not_matched += [row.part, row.matl]
+                    earliest_date = min(earliest_date, row.timestamp)
+                case NotMatchedAnalysisRow():
+                    not_matched += [row.part, row.matl]
+                    earliest_date = min(earliest_date, row.timestamp)
 
         # load not-matched into clipboard
         if not_matched:
-            pyperclip.copy("\r\n".join(sorted(set(not_matched))))
+            ls = sorted(set(not_matched))
+            logging.info(
+                "Parts and Materials not matched:\n{}\n~~~~~~~~~~~~~~~~~~".format(
+                    "\n".join(ls)
+                )
+            )
+
+            pyperclip.copy("\r\n".join(ls))
             print(
                 "Parts and Materials copied to clipboard. Earliest date is {}".format(
                     earliest_date.strftime("%m-%d-%Y")
@@ -259,66 +309,109 @@ class WeeklyAnalysis:
         self.write_updates()
         self.get_not_matched()
 
-    def parse_sheet():
-        vals = self.sheet.range("A2:J2").expand("down").value
-        aliases = dict(
-            id="Id",
-            timestamp="UpdateDate",
-            part="Part",
-            program="Program",
-            qty="Qty",
-            area="Area",
-            matl="MaterialMaster",
-            sapref="OrderOrDocument",
-            sapval="SAPValue",
-        )
+    @property
+    def header(self):
+        if not self._header:
+            aliases = dict(
+                id="Id",
+                timestamp="UpdateDate",
+                part="Part",
+                program="Program",
+                qty="Qty",
+                area="Area",
+                matl="MaterialMaster",
+                sapref="OrderOrDocument",
+                sapval="SAPValue",
+            )
 
-        header = SimpleNamespace()
-        row = self.sheet.range("A1").expand("right").value
-        for k, v in aliases.items():
-            setattr(header, k, row.index(v))
+            self._header = SimpleNamespace(max=0)
+            row = self.sheet.range("A1").expand("right").value
+            for k, v in aliases.items():
+                index = row.index(v)
+                self._header.max = max(self._header.max, index)
+                setattr(self._header, k, index)
 
+        return self._header
+
+    def parse_sheet(self):
+        h = self.header
         rng = (
-            sheet.range((2, 1), (2, len(row) + 1)).expand("down").options(ndim=2).value
+            self.sheet.range((2, 1), (2, h.max + 1))
+            .expand("down")
+            .options(ndim=2)
+            .value
         )
         rng = tqdm(
             enumerate(rng, start=2),
-            desc="Parsing sheet {}".format(sheet),
+            desc="Parsing sheet {}".format(self.sheet),
             total=len(rng),
         )
         for i, row in rng:
-            match (row[header.sapref], row[header.sapval]):
+            log.trace(row)
+
+            sapref = row[h.sapref]
+            sapval = row[h.sapval]
+            if sapref:
+                sapref = int(sapref)
+            if sapval:
+                sapval = float(sapval)
+
+            self.rows[i] = ParsedAnalysisRow(
+                id=i,
+                part=row[h.part],
+                matl=row[h.matl],
+                timestamp=row[h.timestamp],
+                qty=int(row[h.qty]),
+                area=row[h.area],
+                sapref=sapref,
+                sapval=sapval,
+            )
+
+    def analyze(self):
+        self.mb51 = Mb51()
+
+        # easy matches
+        for k, row in self.rows.items():
+            # all rows should be of type ParsedAnalysisRow
+            assert isinstance(row, ParsedAnalysisRow), "Row is not ParsedAnalysisRow"
+
+            match (row.sapref, row.sapval):
+                # no order/doc -> needs matched
                 case (None, None):
+                    # try to match by ID, in case it's an issued item
                     by_id = self.mb51.get_by_id(int(row[header.id]))
                     if by_id:
                         self.update(i, by_id.doc, by_id.area)
-                        continue
 
-                    self.rows[i] = ParsedAnalysisRow(
-                        part=row[header.part],
-                        matl=row[header.matl],
-                        timestamp=row[header.timestamp],
-                        qty=int(row[header.qty]),
-                        area=row[header.area],
-                    )
+                    # set to be matched using nearest neighbor
+                    else:
+                        self.rows[i] = NotMatchedAnalysisRow(
+                            part=row[header.part],
+                            matl=row[header.matl],
+                            timestamp=row[header.timestamp],
+                            qty=int(row[header.qty]),
+                            area=row[header.area],
+                        )
 
+                # order/doc was manually tagged
                 case (sapref, None):
                     area = self.mb51.get_area(int(sapref))
                     if area:
-                        self.update(key, sapref, area)
+                        self.update(i, sapref, area)
                     else:
-                        tqdm.write("Order/Document `{}` not found".format(sapref))
+                        log.info("Order/Document `{}` not found".format(sapref))
 
+                # already matched
                 case (sapref, _):
+                    self.rows[k] = CompleteAnalysisRow(sapref)
                     self.mb51.remove(sapref)
 
-    def analyze(self):
         # analyze
         key = lambda r: (r.part, r.qty, r.matl)
         neighborhoods = dict()
         for k, r in self.rows.items():
             match r:
-                case ParsedAnalysisRow(part, matl, timestamp, qty, area):
+                case NotMatchedAnalysisRow(part, matl, timestamp, qty, area):
                     key = (part, qty, matl)
                     if key not in neighborhoods:
                         neighborhoods[key] = Neighborhood(
@@ -383,11 +476,11 @@ class WeeklyAnalysis:
         # write updates
         update_count = 0
         for start, updates in updates.items():
-            sheet.range((start, header.sapref + 1)).value = updates
+            self.sheet.range((start, self.header.sapref + 1)).value = updates
             update_count += len(updates)
 
         log.info("%d Rows updated", update_count)
-        wb.save()
+        self.workbook.save()
 
     def update(self, row_id: int, order_or_doc: int, consumption: float):
         self.rows[row_id] = AnalysisRowUpdate(order_or_doc, consumption)
@@ -417,10 +510,10 @@ if __name__ == "__main__":
         "--monday", type=str, default=None, help="Monday date operate on"
     )
     parser.add_argument(
-        "-v", "--verbose", action="count", help="make the script more chatty"
+        "-v", "--verbose", action="count", default=3, help="make the script more chatty"
     )
     parser.add_argument(
-        "-q", "--quiet", action="count", help="make the script less chatty"
+        "-q", "--quiet", action="count", default=0, help="make the script less chatty"
     )
     parser.add_argument(
         "-s",
@@ -433,7 +526,7 @@ if __name__ == "__main__":
     if args.silence:
         verbose = -1
     else:
-        verbose = 3 + args.verbose - args.quiet
+        verbose = args.verbose - args.quiet
     match verbose:
         case i if i < 1:
             log.setLevel(logging.CRITICAL)
@@ -446,11 +539,13 @@ if __name__ == "__main__":
         case 4:
             log.setLevel(logging.DEBUG)
         case i if i > 4:
-            log.setLevel(logging.TRACE)
+            log.setLevel(TRACE)
 
     if args.pull:
         WeeklyAnalysis(monday=args.monday).pull()
     elif args.analyze:
         WeeklyAnalysis(monday=args.monday).match()
+    elif args.not_matched:
+        WeeklyAnalysis(monday=args.monday).get_not_matched()
     else:
         print("No action specified")
