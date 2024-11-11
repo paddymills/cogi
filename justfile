@@ -12,6 +12,8 @@ match *args:
     python src/analysis.py --analyze {{args}}
 pull *args:
     python src/analysis.py --pull {{args}}
+mm *args:
+    python src/analysis.py --not-matched {{args}}
 analyze *args:
     python src/analysis.py {{args}}
 
