@@ -470,14 +470,17 @@ class WeeklyAnalysis:
                         updates[start] = list()
 
                     updates[start].append([sapref, area])
+                case _:
+                    start = 0
 
         # write updates
-        update_count = 0
+        progress = tqdm(
+            desc="Writing updates", total=sum(len(v) for v in updates.values())
+        )
         for start, rows in updates.items():
             self.sheet.range((start, self.header.sapref + 1)).value = rows
-            update_count += len(rows)
+            progress.update(len(rows))
 
-        log.info("%d Rows updated", update_count)
         self.workbook.save()
 
     def update(self, row_id: int, order_or_doc: int, consumption: float):
