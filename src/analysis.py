@@ -358,7 +358,7 @@ class WeeklyAnalysis:
                 sapval = float(sapval)
 
             self.rows[i] = ParsedAnalysisRow(
-                id=i,
+                id=int(row[h.id]),
                 part=row[h.part],
                 matl=row[h.matl],
                 timestamp=row[h.timestamp],
@@ -382,7 +382,7 @@ class WeeklyAnalysis:
                     # try to match by ID, in case it's an issued item
                     by_id = self.mb51.get_by_id(row.id)
                     if by_id:
-                        self.update(i, by_id.doc, by_id.area)
+                        self.update(k, by_id.doc, by_id.area)
 
                     # set to be matched using nearest neighbor
                     else:
@@ -392,7 +392,7 @@ class WeeklyAnalysis:
                 case (sapref, None):
                     area = self.mb51.get_area(int(sapref))
                     if area:
-                        self.update(i, sapref, area)
+                        self.update(k, sapref, area)
                     else:
                         log.info("Order/Document `{}` not found".format(sapref))
 

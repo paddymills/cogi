@@ -70,7 +70,10 @@ class Mb51ParsedRow:
             self.order = int(order)
 
         if ref:
-            self.ref = int(ref)
+            try:
+                self.ref = int(ref)
+            except ValueError:
+                pass
 
     def to_consumption(self) -> ConsumptionItem:
         return ConsumptionItem(
