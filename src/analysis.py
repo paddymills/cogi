@@ -228,7 +228,8 @@ class WeeklyAnalysis:
     def monday(self):
         if not self._monday:
             today = date.today()
-            self._monday = today.replace(day=today.day - today.weekday())
+            monday = today.replace(day=today.day - today.weekday())
+            self._monday = monday.strftime("%Y-%m-%d")
 
         return self._monday
 
@@ -244,7 +245,7 @@ class WeeklyAnalysis:
     @property
     def sheet(self):
         if not self._sheet:
-            self._sheet = self.workbook.sheets[self.monday.strftime("%Y-%m-%d")]
+            self._sheet = self.workbook.sheets[self.monday]
 
         return self._sheet
 
@@ -255,8 +256,8 @@ class WeeklyAnalysis:
 
         # create sheet if it does not exist
         wb = self.workbook
-        if self.monday() not in wb.sheet_names:
-            wb.sheets["template"].copy(before=wb.sheets["Issues"], name=self.monday())
+        if self.monday not in wb.sheet_names:
+            wb.sheets["template"].copy(before=wb.sheets["Issues"], name=self.monday)
 
         # pull data if sheet is empty
         if self.sheet.range("A2").value is None:
