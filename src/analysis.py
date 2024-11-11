@@ -336,14 +336,16 @@ class WeeklyAnalysis:
 
     def parse_sheet(self):
         h = self.header
+
+        row_start = 2
         rng = (
-            self.sheet.range((2, 1), (2, h.max + 1))
+            self.sheet.range((row_start, 1), (row_start, h.max + 1))
             .expand("down")
             .options(ndim=2)
             .value
         )
         rng = tqdm(
-            enumerate(rng, start=2),
+            enumerate(rng, start=row_start),
             desc="Parsing sheet {}".format(self.sheet),
             total=len(rng),
         )
@@ -410,7 +412,7 @@ class WeeklyAnalysis:
         log.debug("==============")
         for v in self.rows.values():
             match v:
-                case NotMatchedAnalysisRow(part, matl, timestamp, qty, area):
+                case NotMatchedAnalysisRow():
                     log.debug(v)
         log.debug("==============")
 

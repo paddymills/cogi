@@ -195,7 +195,7 @@ class Mb51:
                     parsed = parse(row)
                     consumption[parsed.order] = parsed.to_consumption()
                 case _:
-                    continue
+                    pass
 
         for parsed in self.rows.values():
             match parsed:
