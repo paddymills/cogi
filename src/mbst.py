@@ -13,6 +13,7 @@ with open("temp/docs.txt") as f:
 
 
 print("Place your cursor at the start of the `Material Doc` field")
+time.sleep(2)
 
 positions = []
 frame_dur = 0.25
