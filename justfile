@@ -21,3 +21,5 @@ co13:
     python src/robot/revconf.py
 co02:
     python src/robot/delete.py
+mbst:
+    python src/mbst.py
