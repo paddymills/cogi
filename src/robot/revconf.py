@@ -63,6 +63,7 @@ def on_release(key):
         return False
 
 
-with Listener(on_release=on_release) as listener:
-    print("ready...")
-    listener.join()
+def main():
+    with Listener(on_release=on_release) as listener:
+        print("ready...")
+        listener.join()

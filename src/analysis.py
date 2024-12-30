@@ -497,7 +497,7 @@ class WeeklyAnalysis:
         self.mb51.print()
 
 
-if __name__ == "__main__":
+def main():
     parser = ArgumentParser()
     parser.add_argument("-p", "--pull", action="store_true", help="get the data")
     parser.add_argument(
@@ -552,3 +552,7 @@ if __name__ == "__main__":
         WeeklyAnalysis(monday=args.monday).get_not_matched()
     else:
         print("No action specified")
+
+
+if __name__ == "__main__":
+    main()

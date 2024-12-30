@@ -9,17 +9,17 @@ alias p := pull
 # match *args:
 #     python src/analysis_match_old.py {{args}}
 match *args:
-    python src/analysis.py --analyze {{args}}
+    uv run analysis --analyze {{args}}
 pull *args:
-    python src/analysis.py --pull {{args}}
+    uv run analysis --pull {{args}}
 mm *args:
-    python src/analysis.py --not-matched {{args}}
+    uv run analysis --not-matched {{args}}
 analyze *args:
-    python src/analysis.py {{args}}
+    uv run analysis {{args}}
 
 co13:
-    python src/robot/revconf.py
+    uv run revconf
 co02:
-    python src/robot/delete.py
+    uv run delete
 mbst:
-    python src/mbst.py
+    uv run mbst

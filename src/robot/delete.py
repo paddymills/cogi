@@ -41,30 +41,30 @@ orders = [
     "1000888808",
 ]
 
-progress = iter(tqdm(orders))
 
+def main():
+    progress = iter(tqdm(orders))
 
-def on_release(key):
-    if key == KeyCode.from_char("a"):
-        pyautogui.press("backspace")
-        pyautogui.typewrite(next(progress))
-        pyautogui.press("enter")
+    def on_release(key):
+        if key == KeyCode.from_char("a"):
+            pyautogui.press("backspace")
+            pyautogui.typewrite(next(progress))
+            pyautogui.press("enter")
 
-    elif key == KeyCode.from_char("d"):
-        pyautogui.press("backspace")
-        pyautogui.press("alt")
-        time.sleep(0.5)
-        pyautogui.press("n")
-        pyautogui.press("l")
-        pyautogui.press("s")
-        time.sleep(0.5)
-        pyautogui.hotkey("ctrl", "s")
+        elif key == KeyCode.from_char("d"):
+            pyautogui.press("backspace")
+            pyautogui.press("alt")
+            time.sleep(0.5)
+            pyautogui.press("n")
+            pyautogui.press("l")
+            pyautogui.press("s")
+            time.sleep(0.5)
+            pyautogui.hotkey("ctrl", "s")
 
-    if key == Key.esc or key == KeyCode.from_char("x"):
-        # stop listener and exit
-        return False
+        if key == Key.esc or key == KeyCode.from_char("x"):
+            # stop listener and exit
+            return False
 
-
-with Listener(on_release=on_release) as listener:
-    print("ready...")
-    listener.join()
+    with Listener(on_release=on_release) as listener:
+        print("ready...")
+        listener.join()
