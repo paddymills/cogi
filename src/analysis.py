@@ -265,7 +265,7 @@ class WeeklyAnalysis:
         # create sheet if it does not exist
         wb = self.workbook
         if self.monday not in wb.sheet_names:
-            wb.sheets["template"].copy(before=wb.sheets["Issues"], name=self.monday)
+            wb.sheets["template"].copy(before=wb.sheets[0], name=self.monday)
 
         # pull data if sheet is empty
         if self.sheet.range("A2").value is None:
