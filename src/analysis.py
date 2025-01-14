@@ -235,10 +235,18 @@ class WeeklyAnalysis:
 
     @property
     def workbook(self):
+        ia = r"C:\Users\PMiller1\OneDrive - high.net\inventory\InventoryAnalysis"
+        year = date.today().year
+        filename = os.path.join(ia, f"{year}_WeeklyAnalysis.xlsx")
+
         if not self._wb:
-            self._wb = xlwings.Book(
-                r"C:\Users\PMiller1\OneDrive - high.net\inventory\InventoryAnalysis\2023_WeeklyAnalysis.xlsx"
-            )
+            if not os.path.exists(filename):
+                self._wb = xlwings.Book(
+                    os.path.join(ia, "template_WeeklyAnalysis.xlsx")
+                )
+                self._wb.save(filename)
+            else:
+                self._wb = xlwings.Book(filename)
 
         return self._wb
 
