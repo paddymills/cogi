@@ -7,6 +7,7 @@ SELECT
 	part.AutoID AS Id,
 	program.ArcDateTime AS UpdateDate,
     REPLACE(PartName, '_', '-') AS Part,
+    Data3 AS AltPartName,
     part.ProgramName AS Program,
     QtyProgram AS Qty,
     ROUND(NestedArea * QtyProgram, 3) AS Area,
@@ -14,7 +15,7 @@ SELECT
     stock.Location,
     stock.PrimeCode AS MaterialMaster,
     stock.Mill AS Wbs,
-    
+
     CASE LEFT(program.MachineName,7)
         WHEN 'Plant_3' THEN 'HS02'
         ELSE 'HS01'

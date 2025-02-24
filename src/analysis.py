@@ -325,6 +325,7 @@ class WeeklyAnalysis:
                 id="Id",
                 timestamp="UpdateDate",
                 part="Part",
+                alt_part="AltPartName",
                 program="Program",
                 qty="Qty",
                 area="Area",
@@ -369,7 +370,7 @@ class WeeklyAnalysis:
 
             self.rows[i] = ParsedAnalysisRow(
                 id=int(row[h.id]),
-                part=row[h.part],
+                part=row[h.alt_part] or row[h.part],
                 matl=row[h.matl],
                 timestamp=row[h.timestamp],
                 qty=int(row[h.qty]),
