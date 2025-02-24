@@ -213,7 +213,7 @@ class Mb51:
 
     def get_area(self, order_or_doc) -> float | None:
         match self.rows[order_or_doc]:
-            case ProductionOrder(_, _, _, consumption):
+            case ProductionOrder(_, _, _, consumption) if consumption:
                 return consumption.area
             case IssueItem(_, _, _, _, area):
                 return area
